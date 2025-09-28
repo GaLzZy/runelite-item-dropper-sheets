@@ -28,4 +28,14 @@ public interface GoogleSheetsDropsExporterConfig extends Config
     {
         return "";
     }
+
+    @ConfigItem(
+            keyName = "webhookUrl",
+            name = "Webhook URL",
+            description = "Apps Script endpoint that receives filtered drop notifications."
+    )
+    default String webhookUrl()
+    {
+        return "";
+    }
 }
