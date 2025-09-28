@@ -10,21 +10,11 @@ public interface GoogleSheetsDropsExporterConfig extends Config
     String GROUP = "googlesheetsdropsexporter";
 
     @ConfigItem(
-            keyName = "filteredItems",
-            name = "Filtered items",
-            description = "Comma-separated list of item names to send to Google Sheets."
+            keyName = "endpointUrl",
+            name = "Endpoint URL",
+            description = "Apps Script endpoint used for fetching the whitelist and receiving drop notifications."
     )
-    default String filteredItems()
-    {
-        return "";
-    }
-
-    @ConfigItem(
-            keyName = "webhookUrl",
-            name = "Webhook URL",
-            description = "Apps Script endpoint that receives filtered drop notifications."
-    )
-    default String webhookUrl()
+    default String endpointUrl()
     {
         return "";
     }

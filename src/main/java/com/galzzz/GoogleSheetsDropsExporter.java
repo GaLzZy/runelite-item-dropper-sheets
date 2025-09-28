@@ -1,15 +1,14 @@
 package com.galzzz;
 
-import com.google.common.base.Strings;
 import com.google.gson.Gson;
 import com.google.inject.Provides;
 import java.io.IOException;
-import java.util.Arrays;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
-import java.util.stream.Collectors;
 import javax.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.ChatMessageType;
@@ -19,6 +18,7 @@ import net.runelite.api.ItemComposition;
 import net.runelite.api.TileItem;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.ItemSpawned;
+import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.game.ItemManager;
@@ -50,14 +50,21 @@ public class GoogleSheetsDropsExporter extends Plugin
     @Inject
     private OkHttpClient okHttpClient;
 
+    @Inject
+    private ClientThread clientThread;
+
     private static final MediaType JSON_MEDIA_TYPE = Objects.requireNonNull(MediaType.parse("application/json; charset=utf-8"));
 
     private final Gson gson = new Gson();
+
+    private volatile List<String> filteredItems = Collections.emptyList();
+    private volatile Set<String> filteredItemsLowercase = Collections.emptySet();
 
     @Override
     protected void startUp()
     {
         log.info("Google Sheets Drops Exporter started");
+        refreshFilteredItems(false);
     }
 
     @Override
@@ -71,27 +78,14 @@ public class GoogleSheetsDropsExporter extends Plugin
     {
         if (gameStateChanged.getGameState() == GameState.LOGGED_IN)
         {
-            final List<String> filteredItems = getFilteredItems();
-            final String webhookUrl = getWebhookUrl();
-
-            final StringBuilder message = new StringBuilder();
-            message.append("Item Dropper filter ready for ")
-                    .append(filteredItems.size())
-                    .append(filteredItems.size() == 1 ? " item." : " items.");
-
-            if (!webhookUrl.isEmpty())
-            {
-                message.append(" Webhook configured.");
-            }
-
-            client.addChatMessage(ChatMessageType.GAMEMESSAGE, "", message.toString(), null);
+            refreshFilteredItems(true);
         }
     }
 
     @Subscribe
     public void onItemSpawned(ItemSpawned itemSpawned)
     {
-        final Set<String> filteredItems = getFilteredItemsLowercase();
+        final Set<String> filteredItems = filteredItemsLowercase;
 
         if (filteredItems.isEmpty())
         {
@@ -116,24 +110,9 @@ public class GoogleSheetsDropsExporter extends Plugin
         return configManager.getConfig(GoogleSheetsDropsExporterConfig.class);
     }
 
-    private List<String> getFilteredItems()
-    {
-        return Arrays.stream(Strings.nullToEmpty(config.filteredItems()).split(","))
-                .map(String::trim)
-                .filter(s -> !s.isEmpty())
-                .collect(Collectors.toList());
-    }
-
-    private Set<String> getFilteredItemsLowercase()
-    {
-        return getFilteredItems().stream()
-                .map(String::toLowerCase)
-                .collect(Collectors.toCollection(HashSet::new));
-    }
-
     private void sendWebhook(String itemName, int quantity)
     {
-        final String webhookUrl = getWebhookUrl();
+        final String webhookUrl = getEndpointUrl();
 
         if (webhookUrl.isEmpty())
         {
@@ -164,9 +143,10 @@ public class GoogleSheetsDropsExporter extends Plugin
         });
     }
 
-    private String getWebhookUrl()
+    private String getEndpointUrl()
     {
-        return Strings.nullToEmpty(config.webhookUrl()).trim();
+        final String endpointUrl = config.endpointUrl();
+        return endpointUrl == null ? "" : endpointUrl.trim();
     }
 
     private Request buildRequest(String webhookUrl, String itemName, int quantity)
@@ -181,6 +161,131 @@ public class GoogleSheetsDropsExporter extends Plugin
                 .build();
     }
 
+    private void refreshFilteredItems(boolean announceResult)
+    {
+        final String endpointUrl = getEndpointUrl();
+
+        if (endpointUrl.isEmpty())
+        {
+            updateFilteredItems(Collections.emptyList());
+
+            if (announceResult)
+            {
+                postChatMessage("Item Dropper endpoint not configured.");
+            }
+
+            return;
+        }
+
+        final Request request = new Request.Builder()
+                .url(endpointUrl)
+                .get()
+                .build();
+
+        okHttpClient.newCall(request).enqueue(new Callback()
+        {
+            @Override
+            public void onFailure(Call call, IOException e)
+            {
+                log.warn("Failed to refresh filtered items", e);
+
+                if (announceResult)
+                {
+                    postChatMessage("Item Dropper failed to refresh filtered items. Check logs for details.");
+                }
+            }
+
+            @Override
+            public void onResponse(Call call, Response response)
+            {
+                try (Response res = response)
+                {
+                    if (!res.isSuccessful())
+                    {
+                        log.warn("Filtered items endpoint responded with {}", res.code());
+
+                        if (announceResult)
+                        {
+                            postChatMessage("Item Dropper endpoint responded with an error while refreshing the whitelist.");
+                        }
+
+                        return;
+                    }
+
+                    final String body = res.body() != null ? res.body().string() : "";
+
+                    final FilteredItemsResponse payload = gson.fromJson(body, FilteredItemsResponse.class);
+
+                    if (payload == null)
+                    {
+                        log.warn("Filtered items endpoint returned an empty payload");
+
+                        if (announceResult)
+                        {
+                            postChatMessage("Item Dropper received an empty whitelist payload.");
+                        }
+
+                        return;
+                    }
+
+                    final List<String> items = payload.items != null ? payload.items : Collections.emptyList();
+                    updateFilteredItems(items);
+
+                    if (announceResult)
+                    {
+                        final int size = filteredItems.size();
+                        final String suffix = payload.updatedAt != null && !payload.updatedAt.isEmpty()
+                                ? " (updated " + payload.updatedAt + ")"
+                                : "";
+                        postChatMessage(String.format("Item Dropper loaded %d filtered %s%s.",
+                                size,
+                                size == 1 ? "item" : "items",
+                                suffix));
+                    }
+                }
+                catch (IOException e)
+                {
+                    log.warn("Failed to parse filtered items response", e);
+
+                    if (announceResult)
+                    {
+                        postChatMessage("Item Dropper failed to parse the whitelist response.");
+                    }
+                }
+            }
+        });
+    }
+
+    private void updateFilteredItems(List<String> items)
+    {
+        final List<String> normalizedItems = new ArrayList<>(items.size());
+        final Set<String> lowercase = new HashSet<>(items.size());
+
+        for (String item : items)
+        {
+            if (item == null)
+            {
+                continue;
+            }
+
+            final String trimmed = item.trim();
+
+            if (!trimmed.isEmpty())
+            {
+                normalizedItems.add(trimmed);
+                lowercase.add(trimmed.toLowerCase());
+            }
+        }
+
+        this.filteredItems = Collections.unmodifiableList(normalizedItems);
+        this.filteredItemsLowercase = Collections.unmodifiableSet(lowercase);
+    }
+
+    private void postChatMessage(String message)
+    {
+        clientThread.invokeLater(() -> client.addChatMessage(ChatMessageType.GAMEMESSAGE, "", message, null));
+    }
+
     private static class DropPayload
     {
         private final String item;
@@ -191,5 +296,12 @@ public class GoogleSheetsDropsExporter extends Plugin
             this.item = item;
             this.quantity = quantity;
         }
+    }
+
+    private static class FilteredItemsResponse
+    {
+        private List<String> items;
+        private Integer count;
+        private String updatedAt;
     }
 }
