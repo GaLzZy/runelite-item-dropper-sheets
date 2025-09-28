@@ -72,16 +72,16 @@ public class GoogleSheetsDropsExporter extends Plugin
         if (gameStateChanged.getGameState() == GameState.LOGGED_IN)
         {
             final List<String> filteredItems = getFilteredItems();
-            final String googleSheetId = getGoogleSheetId();
+            final String webhookUrl = getWebhookUrl();
 
             final StringBuilder message = new StringBuilder();
             message.append("Item Dropper filter ready for ")
                     .append(filteredItems.size())
                     .append(filteredItems.size() == 1 ? " item." : " items.");
 
-            if (!googleSheetId.isEmpty())
+            if (!webhookUrl.isEmpty())
             {
-                message.append(" Sheet ID: ").append(googleSheetId);
+                message.append(" Webhook configured.");
             }
 
             client.addChatMessage(ChatMessageType.GAMEMESSAGE, "", message.toString(), null);
@@ -131,14 +131,9 @@ public class GoogleSheetsDropsExporter extends Plugin
                 .collect(Collectors.toCollection(HashSet::new));
     }
 
-    private String getGoogleSheetId()
-    {
-        return Strings.nullToEmpty(config.googleSheetId()).trim();
-    }
-
     private void sendWebhook(String itemName, int quantity)
     {
-        final String webhookUrl = Strings.nullToEmpty(config.webhookUrl()).trim();
+        final String webhookUrl = getWebhookUrl();
 
         if (webhookUrl.isEmpty())
         {
@@ -167,6 +162,11 @@ public class GoogleSheetsDropsExporter extends Plugin
                 }
             }
         });
+    }
+
+    private String getWebhookUrl()
+    {
+        return Strings.nullToEmpty(config.webhookUrl()).trim();
     }
 
     private Request buildRequest(String webhookUrl, String itemName, int quantity)

@@ -5,8 +5,7 @@ A RuneLite plugin that filters item drops by name and forwards matching drops to
 ## Configuration
 
 1. **Filtered items** – comma-separated list of item names to watch for.
-2. **Google Sheet ID** – optional reference for the destination sheet (if your Apps Script uses it).
-3. **Webhook URL** – Apps Script endpoint that receives JSON payloads in the shape:
+2. **Webhook URL** – Apps Script endpoint that receives JSON payloads in the shape:
 
    ```json
    {

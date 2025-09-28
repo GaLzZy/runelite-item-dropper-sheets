@@ -20,16 +20,6 @@ public interface GoogleSheetsDropsExporterConfig extends Config
     }
 
     @ConfigItem(
-            keyName = "googleSheetId",
-            name = "Google Sheet ID",
-            description = "The ID of the Google Sheet that should receive the drops."
-    )
-    default String googleSheetId()
-    {
-        return "";
-    }
-
-    @ConfigItem(
             keyName = "webhookUrl",
             name = "Webhook URL",
             description = "Apps Script endpoint that receives filtered drop notifications."
