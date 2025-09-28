@@ -3,16 +3,22 @@ package com.galzzz;
 import com.google.common.base.Strings;
 import com.google.inject.Provides;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 import javax.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.ChatMessageType;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
+import net.runelite.api.ItemComposition;
+import net.runelite.api.TileItem;
 import net.runelite.api.events.GameStateChanged;
+import net.runelite.api.events.ItemSpawned;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
+import net.runelite.client.game.ItemManager;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
 
@@ -27,6 +33,9 @@ public class GoogleSheetsDropsExporter extends Plugin
 
     @Inject
     private GoogleSheetsDropsExporterConfig config;
+
+    @Inject
+    private ItemManager itemManager;
 
     @Override
     protected void startUp()
@@ -62,6 +71,27 @@ public class GoogleSheetsDropsExporter extends Plugin
         }
     }
 
+    @Subscribe
+    public void onItemSpawned(ItemSpawned itemSpawned)
+    {
+        final Set<String> filteredItems = getFilteredItemsLowercase();
+
+        if (filteredItems.isEmpty())
+        {
+            return;
+        }
+
+        final TileItem tileItem = itemSpawned.getItem();
+        final ItemComposition composition = itemManager.getItemComposition(tileItem.getId());
+        final String itemName = composition.getName();
+
+        if (filteredItems.contains(itemName.toLowerCase()))
+        {
+            final String message = String.format("Filtered drop detected: %s x%d", itemName, tileItem.getQuantity());
+            client.addChatMessage(ChatMessageType.GAMEMESSAGE, "", message, null);
+        }
+    }
+
     @Provides
     GoogleSheetsDropsExporterConfig provideConfig(ConfigManager configManager)
     {
@@ -74,6 +104,13 @@ public class GoogleSheetsDropsExporter extends Plugin
                 .map(String::trim)
                 .filter(s -> !s.isEmpty())
                 .collect(Collectors.toList());
+    }
+
+    private Set<String> getFilteredItemsLowercase()
+    {
+        return getFilteredItems().stream()
+                .map(String::toLowerCase)
+                .collect(Collectors.toCollection(HashSet::new));
     }
 
     private String getGoogleSheetId()
