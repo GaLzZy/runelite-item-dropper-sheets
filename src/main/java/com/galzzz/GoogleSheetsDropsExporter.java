@@ -24,6 +24,7 @@ import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
+import net.runelite.client.events.ConfigChanged;
 import okhttp3.Call;
 import okhttp3.Callback;
 import okhttp3.MediaType;
@@ -71,6 +72,22 @@ public class GoogleSheetsDropsExporter extends Plugin
     protected void shutDown()
     {
         log.info("Google Sheets Drops Exporter stopped");
+    }
+
+    @Subscribe
+    public void onConfigChanged(ConfigChanged configChanged)
+    {
+        if (!GoogleSheetsDropsExporterConfig.GROUP.equals(configChanged.getGroup()))
+        {
+            return;
+        }
+
+        final String key = configChanged.getKey();
+
+        if (key == null || key.equals("endpointUrl"))
+        {
+            refreshFilteredItems(true);
+        }
     }
 
     @Subscribe
