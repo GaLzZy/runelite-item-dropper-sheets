@@ -56,7 +56,8 @@ public class GoogleSheetsDropsExporter extends Plugin
 
     private static final MediaType JSON_MEDIA_TYPE = Objects.requireNonNull(MediaType.parse("application/json; charset=utf-8"));
 
-    private final Gson gson = new Gson();
+    @Inject
+    private Gson gson;
 
     private volatile List<String> filteredItems = Collections.emptyList();
     private volatile Set<String> filteredItemsLowercase = Collections.emptySet();
